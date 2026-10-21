@@ -1,0 +1,60 @@
+name: Build Windows OBS plugin
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Check out this project
+        uses: actions/checkout@v4
+
+      - name: Check out official OBS plugin build template
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-plugintemplate
+          path: _obs-template
+
+      - name: Overlay Low FPS Filter source onto template
+        shell: pwsh
+        run: |
+          Copy-Item "src/low-fps-filter.c" "_obs-template/src/plugin-main.c" -Force
+          New-Item -ItemType Directory -Force "_obs-template/data/locale" | Out-Null
+          Copy-Item "data/locale/en-US.ini" "_obs-template/data/locale/en-US.ini" -Force
+          $specPath = "_obs-template/buildspec.json"
+          $spec = Get-Content $specPath -Raw | ConvertFrom-Json
+          $spec.name = "obs-low-fps-filter"
+          $spec.displayName = "Low FPS Filter for OBS"
+          $spec.version = "1.0.0"
+          $spec.author = "Low FPS Filter"
+          $spec.website = "https://obsproject.com/"
+          $spec.email = "noreply@example.com"
+          $spec | ConvertTo-Json -Depth 20 | Set-Content $specPath -Encoding utf8
+
+      - name: Configure
+        working-directory: _obs-template
+        shell: pwsh
+        run: cmake --preset windows-x64
+
+      - name: Build
+        working-directory: _obs-template
+        shell: pwsh
+        run: cmake --build --preset windows-x64 --config RelWithDebInfo
+
+      - name: Install into package folder
+        working-directory: _obs-template
+        shell: pwsh
+        run: cmake --install build_x64 --prefix "$env:GITHUB_WORKSPACE\package" --config RelWithDebInfo
+
+      - name: Upload compiled plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-low-fps-filter-windows-x64
+          path: package/
+          if-no-files-found: error
